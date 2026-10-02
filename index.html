@@ -5,88 +5,79 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Мои задачи</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    { "imports": { "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js" } }
+  </script>
 </head>
 <body class="min-h-screen bg-slate-50 font-sans text-slate-800">
   <div class="fixed inset-0 -z-10 bg-cover bg-center" style="background-image: url('https://cdn.discordapp.com/attachments/1533500383542902959/1553043364210020463/IMG_2574.png?ex=6ac06198&is=6abf1018&hm=cff4f7233980350da7acdea9bbdc8ab58119116c59219803111b96bc2559ce3a&');"></div>
   <div class="fixed inset-0 -z-10 bg-white/75 backdrop-blur-[2px]"></div>
-  <main class="relative mx-auto w-full max-w-2xl px-4 py-12 sm:py-20">
+
+  <main id="app" class="relative mx-auto w-full max-w-2xl px-4 py-12 sm:py-20" v-cloak>
     <header class="mb-7 flex items-start justify-between">
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Мои задачи</h1>
-        <p id="date" class="mt-2 text-sm text-slate-400"></p>
+        <p class="mt-2 text-sm capitalize text-slate-400">{{ formattedDate }}</p>
       </div>
-      <span id="count" class="rounded-xl bg-violet-100 px-3 py-2 text-sm font-semibold text-violet-700">0 дел</span>
+      <span class="rounded-xl bg-violet-100 px-3 py-2 text-sm font-semibold text-violet-700">{{ tasks.length }} {{ plural(tasks.length) }}</span>
     </header>
 
     <section class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40">
-      <form id="task-form" class="flex gap-3 border-b border-slate-100 p-4">
-        <input id="task-input" type="text" maxlength="120" autocomplete="off" autofocus placeholder="Что нужно сделать?" class="min-w-0 flex-1 rounded-xl bg-slate-100 px-4 py-3 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-violet-300" />
+      <form class="flex gap-3 border-b border-slate-100 p-4" @submit.prevent="addTask">
+        <input v-model="newTask" type="text" maxlength="120" autocomplete="off" autofocus placeholder="Что нужно сделать?" class="min-w-0 flex-1 rounded-xl bg-slate-100 px-4 py-3 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-violet-300" />
         <button class="rounded-xl bg-violet-600 px-5 font-semibold text-white transition hover:bg-violet-700 active:scale-95" type="submit">Добавить</button>
       </form>
-      <ul id="list" class="px-4"></ul>
+
+      <ul class="px-4" v-if="tasks.length">
+        <li v-for="(task, index) in tasks" :key="task.id" class="group flex min-h-[62px] items-center gap-3 border-b border-slate-100 last:border-0">
+          <input v-model="task.done" type="checkbox" class="h-5 w-5 shrink-0 cursor-pointer accent-violet-600" :aria-label="`Отметить: ${task.text}`" />
+          <span class="flex-1 text-sm" :class="task.done && 'text-slate-400 line-through'">{{ task.text }}</span>
+          <button @click="removeTask(index)" class="p-2 text-xl leading-none text-slate-300 opacity-100 transition hover:text-rose-500 sm:opacity-0 sm:group-hover:opacity-100" :aria-label="`Удалить: ${task.text}`">×</button>
+        </li>
+      </ul>
+      <p v-else class="py-9 text-center text-sm text-slate-400">Список задач пока пуст</p>
+
       <footer class="flex items-center justify-between border-t border-slate-100 px-4 py-4 text-sm text-slate-400">
-        <span id="remaining">Нет активных задач</span>
-        <button id="clear" type="button" class="transition hover:text-violet-600">Очистить выполненные</button>
+        <span>{{ activeCount ? `${activeCount} ${plural(activeCount)} осталось` : 'Нет активных задач' }}</span>
+        <button @click="clearCompleted" type="button" class="transition hover:text-violet-600">Очистить выполненные</button>
       </footer>
     </section>
   </main>
 
-  <script>
-    const storageKey = 'tailwind-todo-tasks';
+  <script type="module">
+    import { createApp, computed, ref, watch } from 'vue';
+
+    const storageKey = 'vue-todo-tasks';
     const defaults = [
-      { text: 'Ответить на письма', done: false },
-      { text: 'Запланировать тренировку', done: false },
-      { text: 'Купить продукты', done: true }
+      { id: 1, text: 'Ответить на письма', done: false },
+      { id: 2, text: 'Запланировать тренировку', done: false },
+      { id: 3, text: 'Купить продукты', done: true }
     ];
-    let tasks;
-    try { tasks = JSON.parse(localStorage.getItem(storageKey)) || defaults; } catch { tasks = defaults; }
 
-    const list = document.querySelector('#list');
-    const input = document.querySelector('#task-input');
-    const plural = n => n % 10 === 1 && n % 100 !== 11 ? 'дело' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'дела' : 'дел';
-    const escapeHtml = value => { const el = document.createElement('div'); el.textContent = value; return el.innerHTML; };
-    const save = () => localStorage.setItem(storageKey, JSON.stringify(tasks));
+    let savedTasks = defaults;
+    try { savedTasks = JSON.parse(localStorage.getItem(storageKey)) || defaults; } catch { /* use defaults */ }
 
-    function render() {
-      const active = tasks.filter(task => !task.done).length;
-      document.querySelector('#count').textContent = `${tasks.length} ${plural(tasks.length)}`;
-      document.querySelector('#remaining').textContent = active ? `${active} ${plural(active)} осталось` : 'Нет активных задач';
-      list.innerHTML = tasks.length
-        ? tasks.map((task, index) => `
-          <li class="group flex min-h-[62px] items-center gap-3 border-b border-slate-100 last:border-0">
-            <input type="checkbox" data-toggle="${index}" ${task.done ? 'checked' : ''} class="h-5 w-5 shrink-0 cursor-pointer accent-violet-600" aria-label="Отметить задачу" />
-            <span class="flex-1 text-sm ${task.done ? 'text-slate-400 line-through' : ''}">${escapeHtml(task.text)}</span>
-            <button data-delete="${index}" class="p-2 text-xl leading-none text-slate-300 opacity-100 transition hover:text-rose-500 sm:opacity-0 sm:group-hover:opacity-100" aria-label="Удалить задачу">×</button>
-          </li>`).join('')
-        : '<li class="py-9 text-center text-sm text-slate-400">Список задач пока пуст</li>';
-    }
+    createApp({
+      setup() {
+        const tasks = ref(savedTasks.map((task, index) => ({ ...task, id: task.id ?? Date.now() + index })));
+        const newTask = ref('');
+        const activeCount = computed(() => tasks.value.filter(task => !task.done).length);
+        const formattedDate = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+        const plural = count => count % 10 === 1 && count % 100 !== 11 ? 'дело' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'дела' : 'дел';
 
-    document.querySelector('#task-form').addEventListener('submit', event => {
-      event.preventDefault();
-      const text = input.value.trim();
-      if (!text) return;
-      tasks.unshift({ text, done: false });
-      input.value = '';
-      save(); render();
-    });
-    list.addEventListener('change', event => {
-      const index = event.target.dataset.toggle;
-      if (index === undefined) return;
-      tasks[index].done = event.target.checked;
-      save(); render();
-    });
-    list.addEventListener('click', event => {
-      const index = event.target.dataset.delete;
-      if (index === undefined) return;
-      tasks.splice(index, 1);
-      save(); render();
-    });
-    document.querySelector('#clear').addEventListener('click', () => {
-      tasks = tasks.filter(task => !task.done);
-      save(); render();
-    });
-    document.querySelector('#date').textContent = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
-    render();
+        watch(tasks, value => localStorage.setItem(storageKey, JSON.stringify(value)), { deep: true });
+        const addTask = () => {
+          const text = newTask.value.trim();
+          if (!text) return;
+          tasks.value.unshift({ id: Date.now(), text, done: false });
+          newTask.value = '';
+        };
+        const removeTask = index => tasks.value.splice(index, 1);
+        const clearCompleted = () => { tasks.value = tasks.value.filter(task => !task.done); };
+
+        return { tasks, newTask, activeCount, formattedDate, plural, addTask, removeTask, clearCompleted };
+      }
+    }).mount('#app');
   </script>
 </body>
 </html>
